@@ -258,6 +258,7 @@ void EdgeFS::calcWriteVariable(const MetaInfo* pTailMtInfo, uint32_t writeLen, u
         }
         else
         {
+            // 当chunk块写满时，idleLen为0，则firstWriteLen也是0
             firstWriteLen = writeLen >= pTailMtInfo->m_idleLen ?
                 pTailMtInfo->m_idleLen : writeLen;
         }
@@ -270,30 +271,47 @@ void EdgeFS::calcWriteVariable(const MetaInfo* pTailMtInfo, uint32_t writeLen, u
         pTailMtInfo, writeLen, firstWriteLen, needChunkNum, lastChunkWriteLen);
 }
 
-MetaInfo* EdgeFS::findTailMetaInfo(const MetaInfo* pHeadMtInfo, const char* sha1Val)
+MetaInfo* EdgeFS::findChunkTailMetaInfo(const MetaInfo* pHeadMtInfo)
 {
-    assert(NULL != pHeadMtInfo);
-    assert(NULL != sha1Val);
+    if (!pHeadMtInfo->m_isUsed)
+    {
+        return const_cast<MetaInfo*>(pHeadMtInfo);
+    }
+
+    const MetaInfo* pNextMtInfo = pHeadMtInfo;
+    while (1)
+    {
+        if (kInvalidChunkid == pNextMtInfo->m_nextChunkid)
+        {
+            return const_cast<MetaInfo*>(pNextMtInfo);
+        }
+        pNextMtInfo = calcMetaInfoPtr(pNextMtInfo->m_nextChunkid);
+    }
+    assert(0);
+    return NULL;
+}
+
+MetaInfo* EdgeFS::findFileTailMetaInfo(const MetaInfo* pHeadMtInfo, const char* sha1Val)
+{
+    if (!pHeadMtInfo->m_isUsed)
+    {
+        return const_cast<MetaInfo*>(pHeadMtInfo);
+    }
 
     const MetaInfo* pTailMtInfo = NULL;
-    const MetaInfo* tmp = pHeadMtInfo;
+    const MetaInfo* pNextMtInfo = pHeadMtInfo;
 
     while (1)
     {
-        if (!tmp->m_isUsed)
+        if (0 == memcmp(pNextMtInfo->m_metaData.m_sha1, sha1Val, sizeof(pNextMtInfo->m_metaData.m_sha1)))
         {
-            pTailMtInfo = tmp;
-            break;
+            pTailMtInfo = pNextMtInfo;
         }
-        if (0 == memcmp(tmp->m_metaData.m_sha1, sha1Val, sizeof(tmp->m_metaData.m_sha1)))
-        {
-            pTailMtInfo = tmp;
-        }
-        if (kInvalidChunkid == tmp->m_nextChunkid)
+        if (kInvalidChunkid == pNextMtInfo->m_nextChunkid)
         {
             break;
         }
-        tmp = calcMetaInfoPtr(tmp->m_nextChunkid);
+        pNextMtInfo = calcMetaInfoPtr(pNextMtInfo->m_nextChunkid);
     }
     return const_cast<MetaInfo*>(pTailMtInfo);
 }
@@ -335,17 +353,19 @@ int64_t EdgeFS::write(const std::string& fileName, const char* buff, uint32_t le
 
     uint32_t hashKey = generateHashKey(sha1Val);
     MetaInfo* pHeadMtInfo = calcMetaInfoPtr(hashKey);
-    MetaInfo* pTailMtInfo = findTailMetaInfo(pHeadMtInfo, sha1Val);
+    MetaInfo* pCurrFileTailMtInfo = findFileTailMetaInfo(pHeadMtInfo, sha1Val);
+    MetaInfo* pChunkTailMtInfo = findChunkTailMetaInfo(pHeadMtInfo);
 
-    linfo("hashKey %u pHeadMtInfo %p %d pTailMtInfo %p %d", hashKey, pHeadMtInfo,
-        calcChunkid(pHeadMtInfo), pTailMtInfo, calcChunkid(pTailMtInfo));
+    linfo("hashKey %u pHeadMtInfo %p %d pCurrFileTailMtInfo %p %d pChunkTailMtInfo %p %d",
+        hashKey, pHeadMtInfo, calcChunkid(pHeadMtInfo), pCurrFileTailMtInfo,
+        calcChunkid(pCurrFileTailMtInfo), pChunkTailMtInfo, calcChunkid(pChunkTailMtInfo));
 
     uint32_t firstWriteLen = 0;
     uint32_t needChunkNum = 0;
     std::vector<uint32_t> idleChunkids;
     uint32_t lastChunkWriteLen = 0;
     
-    calcWriteVariable(pTailMtInfo, len, firstWriteLen, needChunkNum, lastChunkWriteLen);
+    calcWriteVariable(pCurrFileTailMtInfo, len, firstWriteLen, needChunkNum, lastChunkWriteLen);
 
     if (0 != needChunkNum)
     {
@@ -367,12 +387,12 @@ int64_t EdgeFS::write(const std::string& fileName, const char* buff, uint32_t le
     {
         if (0 != firstWriteLen)
         {
-            chunkid = calcChunkid(pTailMtInfo);
+            chunkid = calcChunkid(pCurrFileTailMtInfo);
             offset = chunkid * chunkSize;
             // 要注意pTailMtInfo使用的是共享内存的地址，成员变量默认都是0
-            if (pTailMtInfo->m_isUsed)
+            if (pCurrFileTailMtInfo->m_isUsed)
             {
-                offset += chunkSize - pTailMtInfo->m_idleLen;
+                offset += chunkSize - pCurrFileTailMtInfo->m_idleLen;
             }
 
             linfo("first write, firstWriteLen %u offset %" PRIu64 "", firstWriteLen, offset);
@@ -385,32 +405,35 @@ int64_t EdgeFS::write(const std::string& fileName, const char* buff, uint32_t le
             realWriteLen += firstWriteLen;
             remainLen -= firstWriteLen;
 
-            if (pTailMtInfo->m_isUsed)
+            if (pCurrFileTailMtInfo->m_isUsed)
             {
-                pTailMtInfo->m_idleLen -= firstWriteLen;
+                pCurrFileTailMtInfo->m_idleLen -= firstWriteLen;
             }
             else
             {
                 m_pBitMap->insert(chunkid);
-                pTailMtInfo->m_isUsed = true;
-                memcpy(pTailMtInfo->m_metaData.m_sha1, sha1Val, sizeof(pTailMtInfo->m_metaData.m_sha1));
-                pTailMtInfo->m_idleLen = chunkSize - firstWriteLen;
-                pTailMtInfo->m_nextChunkid = kInvalidChunkid;
+                pCurrFileTailMtInfo->m_isUsed = true;
+                memcpy(pCurrFileTailMtInfo->m_metaData.m_sha1, sha1Val,
+                    sizeof(pCurrFileTailMtInfo->m_metaData.m_sha1));
+                pCurrFileTailMtInfo->m_idleLen = chunkSize - firstWriteLen;
+                pCurrFileTailMtInfo->m_nextChunkid = kInvalidChunkid;
             }
-            if (0 == pTailMtInfo->m_idleLen)
+            if (0 == pCurrFileTailMtInfo->m_idleLen)
             {
-                // 当前chunk已经下满了，赋值nextChunkid
-                pTailMtInfo->m_nextChunkid = idleChunkids.empty() ? kInvalidChunkid : idleChunkids[0];
+                // 当前chunk已经写满了，则赋值最后一个chunk的nextChunkid
+                // 请注意这里不是赋值pCurrFileTailMtInfo
+                // 请详细看ReadMe.md的元数据区的图
+                pChunkTailMtInfo->m_nextChunkid = idleChunkids.empty() ? kInvalidChunkid : idleChunkids[0];
             }
 
-            linfo("chunkid %u offset %" PRIu64 " tailMetaInfo %s", chunkid, offset, pTailMtInfo->print().c_str());
+            linfo("chunkid %u offset %" PRIu64 " tailMetaInfo %s", chunkid, offset, pCurrFileTailMtInfo->print().c_str());
         }
         else
         {
-            // 前面一个chunk刚刚写满，但是nextChunkids还未赋值
+            // firstWriteLen为0，则说明filename的最后一个chunk块写满了，则赋值最后一个chunk块的nextChunkid
             if (!idleChunkids.empty())
             {
-                pTailMtInfo->m_nextChunkid = idleChunkids[0];
+                pChunkTailMtInfo->m_nextChunkid = idleChunkids[0];
             }
         }
 
@@ -437,7 +460,6 @@ int64_t EdgeFS::write(const std::string& fileName, const char* buff, uint32_t le
                 m_pBitMap->insert(chunkid);
                 pCurrMtInfo->m_isUsed = true;
                 memcpy(pCurrMtInfo->m_metaData.m_sha1, sha1Val, sizeof(pCurrMtInfo->m_metaData.m_sha1));
-
                 pCurrMtInfo->m_idleLen = chunkSize - firstWriteLen;
 
                 if (i + 1 == needChunkNum)

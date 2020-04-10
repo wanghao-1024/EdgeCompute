@@ -11,7 +11,7 @@ int main()
 
     SystemInfo sinfo;
     sinfo.m_diskCapacity = 1024ull * 1024 * 1; // 1MB
-    sinfo.m_diskRootDir = "/Users/wanghao/worker/mycode/edgefs/data/";
+    sinfo.m_diskRootDir = "../data/";
     sinfo.m_edgeFSUsableMemory = 1024 * 1024 * 1;
 
     if (!efs->initFS(sinfo))

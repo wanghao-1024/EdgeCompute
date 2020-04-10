@@ -39,7 +39,8 @@ private:
     // write
     void calcWriteVariable(const MetaInfo* pTailMtInfo, uint32_t writeLen, uint32_t& firstWriteLen,
         uint32_t& needChunkNum, uint32_t& lastChunkWriteLen);
-    MetaInfo* findTailMetaInfo(const MetaInfo* pHeadMtInfo, const char* sha1Val);
+    MetaInfo* findChunkTailMetaInfo(const MetaInfo* pHeadMtInfo);
+    MetaInfo* findFileTailMetaInfo(const MetaInfo* pHeadMtInfo, const char* sha1Val);
 
     // read
     void generateReadChunkids(const MetaInfo* pHeadMtInfo, const char* sha1Val,
