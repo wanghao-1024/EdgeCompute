@@ -1,0 +1,17 @@
+编译：
+    ./make
+
+部署:
+    需要一个外网设备有两个公网IP，运行./nat_probe_server
+    在需要被监测的设备上面执行./nat_probe_server就可以得出结果
+
+探测出的NAT类型有下面几种：
+UNKNOWN                         未知网络类型
+PUBLIC_NETWORK                  公有网络
+FULL_CONE_NAT                   全锥型NAT
+RESTRICTED_CONE_NAT             限制型NAT
+PORT_RESTRICTED_CONE_NAT        端口限制型NAT
+SYMMETRIC_NAT                   对称型NAT
+
+参考：
+http://feelc.farbox.com/post/natwang-luo-lei-xing-jian-ce
