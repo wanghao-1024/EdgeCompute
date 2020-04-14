@@ -34,7 +34,7 @@ typedef struct MetaData_
 
     char        m_sha1[SHA_DIGEST_LENGTH];
     uint64_t    m_fileSize;     // TODO暂时未使用
-    uint32_t    m_crc32;        // TODO暂时未使用
+    uint32_t    m_crc32;        // TODO暂时未使用，写入时检查，读取时检查（需要考虑路由器的性能）
 
     MetaData_()
     : m_fileSize(0)
@@ -56,7 +56,7 @@ typedef struct ExtendArea_
 
 typedef struct MetaInfo_
 {
-    bool            m_isUsed;   // 是否被占用
+    bool            m_isUsed : 1;   // 是否被占用
 
     // 整个文件的信息，存储该文件的每个chunk块应该一致
     MetaData        m_metaData;

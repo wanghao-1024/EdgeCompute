@@ -496,7 +496,7 @@ int64_t EdgeFS::read(const std::string& fileName, char* buff, uint32_t len, uint
 
     uint32_t hashKey = generateHashKey(sha1Val);
     MetaInfo* pHeadMtInfo = calcMetaInfoPtr(hashKey);
-    std::vector<uint32_t> writeChunkids;
+    std::deque<uint32_t> writeChunkids;  // 这里deque要好于vector，因为vector扩容是会发生拷贝
     uint32_t lastChunkWriteLen = 0;
     uint64_t writeTotalLen = 0;
 
@@ -521,6 +521,8 @@ int64_t EdgeFS::read(const std::string& fileName, char* buff, uint32_t len, uint
         linfo("%d ", writeChunkids[i]);
     }
 
+    // calcReadVariable和generateReadChunkids合并可以优化性能和内存占用
+    // 当文件比较大时，writeChunkids可能会内存消耗
     std::map<uint64_t, uint32_t> readInfo;     // offset -> len
     calcReadVariable(writeChunkids, lastChunkWriteLen, len, offset, readInfo);
 
@@ -545,7 +547,7 @@ int64_t EdgeFS::read(const std::string& fileName, char* buff, uint32_t len, uint
 }
 
 void EdgeFS::generateReadChunkids(const MetaInfo* pHeadMtInfo, const char* sha1Val,
-    std::vector<uint32_t>& writeChunkids, uint64_t& writeTotalLen, uint32_t& lastChunkidWriteLen)
+    std::deque<uint32_t>& writeChunkids, uint64_t& writeTotalLen, uint32_t& lastChunkidWriteLen)
 {
     assert(NULL != pHeadMtInfo);
     assert(NULL != sha1Val);
@@ -575,7 +577,7 @@ void EdgeFS::generateReadChunkids(const MetaInfo* pHeadMtInfo, const char* sha1V
     }
 }
 
-void EdgeFS::calcReadVariable(const std::vector<uint32_t>& writeChunkids, uint32_t lastChunkWriteLen,
+void EdgeFS::calcReadVariable(const std::deque<uint32_t>& writeChunkids, uint32_t lastChunkWriteLen,
     uint32_t readLen, uint64_t offset, std::map<uint64_t, uint32_t>& readInfo)
 {
     const uint32_t chunkSize = m_pFSHead->m_chunkSize;

@@ -44,8 +44,8 @@ private:
 
     // read
     void generateReadChunkids(const MetaInfo* pHeadMtInfo, const char* sha1Val,
-        std::vector<uint32_t>& writeChunkids, uint64_t& writeTotalLen, uint32_t& lastChunkidWriteLen);
-    void calcReadVariable(const std::vector<uint32_t>& writeChunkids, uint32_t lastChunkWriteLen,
+        std::deque<uint32_t>& writeChunkids, uint64_t& writeTotalLen, uint32_t& lastChunkidWriteLen);
+    void calcReadVariable(const std::deque<uint32_t>& writeChunkids, uint32_t lastChunkWriteLen,
         uint32_t readLen, uint64_t offset, std::map<uint64_t, uint32_t>& readInfo);
 
     // common
