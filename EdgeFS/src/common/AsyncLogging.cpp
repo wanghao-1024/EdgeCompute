@@ -108,6 +108,28 @@ void AsyncLogging::logOutput()
             m_pFileOper->write(msg.c_str(), msg.size());
         }
     }
+
+    {
+        std::deque<std::string> logQ;
+        {
+            std::unique_lock<std::mutex> lock(m_MutexQueue);
+            if (m_shareQueue.empty())
+            {
+                m_condQueue.wait(lock);
+            }
+            logQ.swap(m_shareQueue);
+        }
+
+        int i = 0;
+        for (auto && msg : logQ)
+        {
+            if (i++ > 1000)
+            {
+                break;
+            }
+            m_pFileOper->write(msg.c_str(), msg.size());
+        }
+    }
 }
 
 std::string AsyncLogging::getCurrentTimeString()

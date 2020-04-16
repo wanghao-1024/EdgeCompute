@@ -35,6 +35,7 @@ bool Bitmap::generateIdleChunkids(std::vector<uint32_t>& idleChunkids, uint32_t 
     auto func = [&](uint32_t start, uint32_t end) -> bool {
         for (uint32_t i = start; i < end; i ++)
         {
+            // TODO 此处获取的chunkid仍然是连续的
             if (isHave(i))
             {
                 continue;

@@ -12,8 +12,8 @@ const std::string kIndexFileName = "edgefs.idx";
 
 const std::string kLogFileName = "edgefs.log";
 
-//const uint32_t kMinChunkSize = 1024 * 1024;
-const uint32_t kMinChunkSize = 1024;
+const uint32_t kMinChunkSize = 1024 * 1024;
+//const uint32_t kMinChunkSize = 1024;
 
 const uint32_t kMaxChunkSize = 128 * 1024 * 1024;
 

@@ -136,6 +136,17 @@ bool EdgeFS::initFSCalcPointerAddr(bool isExistsIdxFile, uint32_t chunkNum, uint
 {
     if (isExistsIdxFile)
     {
+        int dataFd = m_pDataMgr->getfd();
+        if (-1 == dataFd)
+        {
+            lfatal("initFS failed, data fd error");
+            return false;
+        }
+        if (ftruncate(dataFd, diskSize))
+        {
+            lfatal("initFS failed, ftruncate failed, diskSize %" PRIu64 " err %s", diskSize, strerror(errno));
+            return false;
+        }
         return initFSCalcPointerAddrForReloadIdxFile(chunkNum, chunkSize, diskSize, bitmapSize, mmapSize);
     }
     return initFSCalcPointerAddrForCreateIdxFile(chunkNum, chunkSize, diskSize, bitmapSize, mmapSize);
@@ -388,14 +399,14 @@ int64_t EdgeFS::write(const std::string& fileName, const char* buff, uint32_t le
         if (0 != firstWriteLen)
         {
             chunkid = calcChunkid(pCurrFileTailMtInfo);
-            offset = chunkid * chunkSize;
+            offset = (uint64_t)chunkid * (uint64_t)chunkSize;
             // 要注意pTailMtInfo使用的是共享内存的地址，成员变量默认都是0
             if (pCurrFileTailMtInfo->m_isUsed)
             {
                 offset += chunkSize - pCurrFileTailMtInfo->m_idleLen;
             }
 
-            linfo("first write, firstWriteLen %u offset %" PRIu64 "", firstWriteLen, offset);
+            linfo("first write, firstWriteLen %u chunkid %u offset %" PRIu64, firstWriteLen, chunkid, offset);
 
             if (!m_pDataMgr->write(buff+realWriteLen, firstWriteLen, offset))
             {
@@ -489,7 +500,7 @@ int64_t EdgeFS::read(const std::string& fileName, char* buff, uint32_t len, uint
     {
         return -1;
     }
-    lnotice("fileName %s len %u", fileName.c_str(), len);
+    lnotice("fileName %s len %u offset %" PRIu64, fileName.c_str(), len, offset);
 
     char sha1Val[SHA_DIGEST_LENGTH] = { '\0' };
     ShaHelper::calcShaToHex(fileName, sha1Val);
@@ -518,7 +529,7 @@ int64_t EdgeFS::read(const std::string& fileName, char* buff, uint32_t len, uint
     linfo("write chunkids : ");
     for (uint32_t i = 0; i < writeChunkids.size(); i++)
     {
-        linfo("%d ", writeChunkids[i]);
+        ldebug("%d ", writeChunkids[i]);
     }
 
     // calcReadVariable和generateReadChunkids合并可以优化性能和内存占用
@@ -609,18 +620,18 @@ void EdgeFS::calcReadVariable(const std::deque<uint32_t>& writeChunkids, uint32_
             break;
         }
         uint32_t chunkid = writeChunkids[idx];
+        uint32_t chunkWriteLen = chunkSize;
 
         if (idx + 1 == writeChunkids.size())
         {
-            // 最后一个chunk需要读的长度
+            // 最后一个chunk写入的长度
             MetaInfo* pMtInfo = calcMetaInfoPtr(chunkid);
-            uint32_t lastChunkReadlen = std::min(remainLen % chunkSize, chunkSize - pMtInfo->m_idleLen);
-            readInfo[calcOffset(chunkid)] = lastChunkReadlen;
+            chunkWriteLen = chunkSize - pMtInfo->m_idleLen;
         }
-        else
-        {
-            readInfo[calcOffset(chunkid)] = chunkSize;
-        }
+        
+        uint32_t chunkReadLen = std::min(chunkSize, remainLen);
+        readInfo[calcOffset(chunkid)] = chunkReadLen;
+        remainLen -= chunkReadLen;
     }
 }
 
@@ -634,7 +645,9 @@ void EdgeFS::printAllMetaInfo()
         {
             continue;
         }
-        linfo("chunkid %u idleLen %u nextChunkId %d", chunkid, pMtInfo->m_idleLen, pMtInfo->m_nextChunkid);
+        linfo("chunkid %u writeLen %u idleLen %u nextChunkId %d", chunkid,
+            m_pFSHead->m_chunkSize - pMtInfo->m_idleLen, pMtInfo->m_idleLen,
+            pMtInfo->m_nextChunkid);
     }
     linfo("end");
 }
