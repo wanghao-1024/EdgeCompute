@@ -4,31 +4,36 @@
 
 DataMgr::DataMgr()
 {
-    m_pFileOper = new FileOper();
 }
 
 DataMgr::~DataMgr()
 {
-    SAFE_DELETE(m_pFileOper);
 }
 
-void DataMgr::initDataMgr(const std::string& rootDir)
+bool DataMgr::initDataMgr(const std::string& rootDir, uint64_t fileSize)
 {
     std::string filePath = rootDir + "/" + kDataFileName;
     
-    m_pFileOper->setPath(filePath);
-    m_pFileOper->open();
-}
+    FileOper::setPath(filePath);
 
+    if (!FileOper::open())
+    {
+        lerror("initDataMgr failed, open data file failed, filepath %s", filePath.c_str());
+        return false;
+    }
+
+    int dataFd = FileOper::getfd();
+    if (ftruncate(dataFd, fileSize))
+    {
+        lfatal("initDataMgr failed, ftruncate failed, diskSize %" PRIu64 " err %s", fileSize, strerror(errno));
+        return false;
+    }
+    linfo("initDataMgr ftruncate data file, dataFd %d diskSize %" PRIu64, dataFd, fileSize);
+    return true;
+}
 
 bool DataMgr::write(const char* buff, uint32_t len, uint64_t offset)
 {
     // TODO 可以做按照4K的倍数写入的优化
-    // todo 这里需要继续修改FileOper::write的返回值
-    return m_pFileOper->write(buff, len, offset);
-}
-
-bool DataMgr::read(char* buff, uint32_t len, uint64_t offset)
-{
-    return m_pFileOper->read(buff, len, offset);
+    return FileOper::write(buff, len, offset);
 }

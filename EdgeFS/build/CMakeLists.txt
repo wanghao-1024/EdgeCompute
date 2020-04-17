@@ -58,6 +58,8 @@ set(ALL_SRC_FILES
     ${SRC_PATH}/EdgeFS.cpp
     )
 
+link_libraries(-pthread -ldl)
+
 # ======== object files ======
 set(OBJECT_FILES ${PROJECT_NAME}_obj_files)
 add_library(${OBJECT_FILES} OBJECT ${ALL_SRC_FILES})
@@ -77,21 +79,38 @@ install(
 
 # ======== demo =========
 if (ENABLE_DEMO)
-    set(ALL_SRC_FILES
-        ${DEMO_PATH}/main.cpp
+    set(WRITE_ALL_SRC_FILES
+        ${DEMO_PATH}/WriteMain.cpp
     )
-    set(DEMO_NAME "edgefs_main")
-    add_executable(${DEMO_NAME} ${ALL_SRC_FILES})
+    set(WRITE_DEMO_NAME "edgefs_write_main")
+    add_executable(${WRITE_DEMO_NAME} ${WRITE_ALL_SRC_FILES})
 
-    target_link_libraries(${DEMO_NAME} PRIVATE
+    target_link_libraries(${WRITE_DEMO_NAME} PRIVATE
         edgefs
     )
 
     install(
-        TARGETS ${DEMO_NAME}
-        RUNTIME DESTINATION ${INSTALL_PATH}
-        LIBRARY DESTINATION ${INSTALL_PATH}
-        ARCHIVE DESTINATION ${INSTALL_PATH}
+        TARGETS ${WRITE_DEMO_NAME}
+        RUNTIME DESTINATION ${DEMO_PATH}
+        LIBRARY DESTINATION ${DEMO_PATH}
+        ARCHIVE DESTINATION ${DEMO_PATH}
+    )
+
+    set(READ_ALL_SRC_FILES
+        ${DEMO_PATH}/ReadMain.cpp
+    )
+    set(READ_DEMO_NAME "edgefs_read_main")
+    add_executable(${READ_DEMO_NAME} ${READ_ALL_SRC_FILES})
+
+    target_link_libraries(${READ_DEMO_NAME} PRIVATE
+        edgefs
+    )
+    
+    install(
+        TARGETS ${READ_DEMO_NAME}
+        RUNTIME DESTINATION ${DEMO_PATH}
+        LIBRARY DESTINATION ${DEMO_PATH}
+        ARCHIVE DESTINATION ${DEMO_PATH}
     )
 endif ()
 

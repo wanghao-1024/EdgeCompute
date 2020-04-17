@@ -124,3 +124,8 @@ int FileOper::getfd()
 {
     return m_fd;
 }
+
+void FileOper::unlink()
+{
+    ::unlink(m_path.c_str());
+}

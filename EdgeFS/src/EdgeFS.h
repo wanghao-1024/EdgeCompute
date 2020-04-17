@@ -26,6 +26,8 @@ public:
 
 private:
     // init
+    bool initFSImpl(const SystemInfo& info);
+    void initFSFailRollBack();
     bool initFSCheckParam(const SystemInfo& info);
     bool initFSCalcVariable(const SystemInfo& info, uint32_t& chunkNum, uint32_t& chunkSize, uint64_t& diskSize,
         uint32_t& bitmapSize, uint64_t& mmapSize);
@@ -46,13 +48,14 @@ private:
     void generateReadChunkids(const MetaInfo* pHeadMtInfo, const char* sha1Val,
         std::deque<uint32_t>& writeChunkids, uint64_t& writeTotalLen, uint32_t& lastChunkidWriteLen);
     void calcReadVariable(const std::deque<uint32_t>& writeChunkids, uint32_t lastChunkWriteLen,
-        uint32_t readLen, uint64_t offset, std::map<uint64_t, uint32_t>& readInfo);
+        uint32_t readLen, uint64_t offset, std::deque<std::pair<uint64_t, uint32_t>>& readInfo);
 
     // common
     uint32_t calcChunkid(const MetaInfo* pMtInfo);
     MetaInfo* calcMetaInfoPtr(uint32_t chunkid);
     uint64_t calcOffset(uint32_t chunkid);
     uint32_t generateHashKey(const char* sha1Val);
+    uint32_t generateTaskid();
 
 private:
     void printAllMetaInfo();
@@ -66,4 +69,7 @@ private:
 
     DataMgr*                m_pDataMgr;
     IndexMgr*               m_pIndexMgr;
+
+    uint32_t                m_nextTaskid;
+    uint32_t                m_currTaskid;
 };

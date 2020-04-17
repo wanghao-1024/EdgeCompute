@@ -68,7 +68,7 @@ void AsyncLogging::stop()
 
 void AsyncLogging::log( const std::string& msg )
 {
-    if (m_shareQueue.size() > 1000)
+    if (m_shareQueue.size() > 10000)
     {
         return;
     }
@@ -123,7 +123,7 @@ void AsyncLogging::logOutput()
         int i = 0;
         for (auto && msg : logQ)
         {
-            if (i++ > 1000)
+            if (i++ > 10000)
             {
                 break;
             }

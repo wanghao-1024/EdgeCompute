@@ -33,7 +33,12 @@ EdgeFS* EdgeFS::instance()
 }
 
 EdgeFS::EdgeFS()
+: m_nextTaskid(1)
+, m_currTaskid(-1)
 {
+    m_pFSHead = NULL;
+    m_pMetaPool = NULL;
+
     m_pDataMgr = new DataMgr();
     m_pIndexMgr = new IndexMgr();
     m_pBitMap = new Bitmap();
@@ -47,10 +52,27 @@ EdgeFS::~EdgeFS()
 
 bool EdgeFS::initFS(const SystemInfo& info)
 {
+    if (!initFSImpl(info))
+    {
+        initFSFailRollBack();
+        return false;
+    }
+    return true;
+}
+
+void EdgeFS::initFSFailRollBack()
+{
+    m_pDataMgr->unlink();
+    m_pIndexMgr->unlink();
+}
+
+bool EdgeFS::initFSImpl(const SystemInfo& info)
+{
     AsyncLogging::create();
     AsyncLogging::instance()->init(info.m_diskRootDir + "/" + kLogFileName);
 
     linfo("========================");
+
     lnotice("initFs, systemInfo disk %" PRIu64 " rootdir %s memory %" PRIu64, info.m_diskCapacity,
         info.m_diskRootDir.c_str(), info.m_edgeFSUsableMemory);
 
@@ -60,17 +82,19 @@ bool EdgeFS::initFS(const SystemInfo& info)
         return false;
     }
 
-    bool isExistIdxFile = false;
-
-    // 初始化数据文件和index文件
-    // TODO 目前不支持大文件，后续需要用mmap64, ftruncate64等
-    m_pDataMgr->initDataMgr(info.m_diskRootDir);
-    m_pIndexMgr->initIndexMgr(info.m_diskRootDir, isExistIdxFile);
-
     // 根据收入的内存大小和磁盘大小，计算chunk个数，chunk大小，需要映射的内存
     uint32_t chunkNum = 0, chunkSize = 0, bitmapSize = 0;
     uint64_t diskSize = 0, mmapSize = 0;
     if (!initFSCalcVariable(info, chunkNum, chunkSize, diskSize, bitmapSize, mmapSize))
+    {
+        return false;
+    }
+
+    // 初始化数据文件和index文件
+    // TODO macos上面已经支持大文件了, linux系统后续需要用mmap64, ftruncate64等
+    bool isExistIdxFile = false;
+    if (!m_pDataMgr->initDataMgr(info.m_diskRootDir, diskSize) ||
+        !m_pIndexMgr->initIndexMgr(info.m_diskRootDir, mmapSize, isExistIdxFile))
     {
         return false;
     }
@@ -136,17 +160,6 @@ bool EdgeFS::initFSCalcPointerAddr(bool isExistsIdxFile, uint32_t chunkNum, uint
 {
     if (isExistsIdxFile)
     {
-        int dataFd = m_pDataMgr->getfd();
-        if (-1 == dataFd)
-        {
-            lfatal("initFS failed, data fd error");
-            return false;
-        }
-        if (ftruncate(dataFd, diskSize))
-        {
-            lfatal("initFS failed, ftruncate failed, diskSize %" PRIu64 " err %s", diskSize, strerror(errno));
-            return false;
-        }
         return initFSCalcPointerAddrForReloadIdxFile(chunkNum, chunkSize, diskSize, bitmapSize, mmapSize);
     }
     return initFSCalcPointerAddrForCreateIdxFile(chunkNum, chunkSize, diskSize, bitmapSize, mmapSize);
@@ -156,26 +169,12 @@ bool EdgeFS::initFSCalcPointerAddrForCreateIdxFile(uint32_t chunkNum, uint32_t c
     uint32_t bitmapSize, uint64_t mmapSize)
 {
     int fd = m_pIndexMgr->getfd();
-    if (-1 == fd)
-    {
-        lfatal("initFS failed, fd error");
-        return false;
-    }
-
     char *ptr = (char *)mmap(0, mmapSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (MAP_FAILED == ptr)
     {
         lfatal("initFS failed, mmap failed, mmapSize %" PRIu64 " fd %d err %s", mmapSize, fd, strerror(errno));
         return false;
     }
-    
-    if (ftruncate(fd, mmapSize))
-    {
-        lfatal("initFS failed, ftruncate failed, mmapSize %" PRIu64 " err %s", mmapSize, strerror(errno));
-        return false;
-    }
-
-    // 必须放在ftruncate后面
     memset(ptr, 0, mmapSize);
 
     // 赋值指针
@@ -264,8 +263,8 @@ void EdgeFS::calcWriteVariable(const MetaInfo* pTailMtInfo, uint32_t writeLen, u
         if (!pTailMtInfo->m_isUsed)
         {
             // chunk块没有被使用
-            firstWriteLen = writeLen >= m_pFSHead->m_chunkSize ?
-                m_pFSHead->m_chunkSize : writeLen;
+            // fistWriteLen是为了先将最后一个未满的chunk填满
+            firstWriteLen = 0;
         }
         else
         {
@@ -276,10 +275,11 @@ void EdgeFS::calcWriteVariable(const MetaInfo* pTailMtInfo, uint32_t writeLen, u
     }
     uint64_t remainLen = writeLen - firstWriteLen;
     needChunkNum = DIV_ROUND_UP(remainLen, m_pFSHead->m_chunkSize);
-    lastChunkWriteLen = remainLen % m_pFSHead->m_chunkSize;
-
-    linfo("pTailMtInfo %p writeLen %u firstWriteLen %u needChunkNum %u lastChunkWriteLen %u",
-        pTailMtInfo, writeLen, firstWriteLen, needChunkNum, lastChunkWriteLen);
+    lastChunkWriteLen = (0 == remainLen % m_pFSHead->m_chunkSize) ?
+        m_pFSHead->m_chunkSize : remainLen % m_pFSHead->m_chunkSize;
+        
+    linfo("taskid %u pTailMtInfo %p writeLen %u firstWriteLen %u needChunkNum %u lastChunkWriteLen %u",
+        m_currTaskid, pTailMtInfo, writeLen, firstWriteLen, needChunkNum, lastChunkWriteLen);
 }
 
 MetaInfo* EdgeFS::findChunkTailMetaInfo(const MetaInfo* pHeadMtInfo)
@@ -343,7 +343,7 @@ MetaInfo* EdgeFS::calcMetaInfoPtr(uint32_t chunkid)
 
 uint64_t EdgeFS::calcOffset(uint32_t chunkid)
 {
-    return (uint64_t)chunkid * m_pFSHead->m_chunkSize;
+    return (uint64_t)chunkid * (uint64_t)(m_pFSHead->m_chunkSize);
 }
 
 uint32_t EdgeFS::generateHashKey(const char* sha1Val)
@@ -357,7 +357,9 @@ int64_t EdgeFS::write(const std::string& fileName, const char* buff, uint32_t le
     {
         return -1;
     }
-    lnotice("fileName %s len %u", fileName.c_str(), len);
+    m_currTaskid = generateTaskid();
+
+    lnotice("taskid %u fileName %s len %u", m_currTaskid, fileName.c_str(), len);
 
     char sha1Val[SHA_DIGEST_LENGTH] = { '\0' };
     ShaHelper::calcShaToHex(fileName, sha1Val);
@@ -367,8 +369,8 @@ int64_t EdgeFS::write(const std::string& fileName, const char* buff, uint32_t le
     MetaInfo* pCurrFileTailMtInfo = findFileTailMetaInfo(pHeadMtInfo, sha1Val);
     MetaInfo* pChunkTailMtInfo = findChunkTailMetaInfo(pHeadMtInfo);
 
-    linfo("hashKey %u pHeadMtInfo %p %d pCurrFileTailMtInfo %p %d pChunkTailMtInfo %p %d",
-        hashKey, pHeadMtInfo, calcChunkid(pHeadMtInfo), pCurrFileTailMtInfo,
+    linfo("taskid %u hashKey %u pHeadMtInfo %p %d pCurrFileTailMtInfo %p %d pChunkTailMtInfo %p %d",
+        m_currTaskid, hashKey, pHeadMtInfo, calcChunkid(pHeadMtInfo), pCurrFileTailMtInfo,
         calcChunkid(pCurrFileTailMtInfo), pChunkTailMtInfo, calcChunkid(pChunkTailMtInfo));
 
     uint32_t firstWriteLen = 0;
@@ -380,18 +382,20 @@ int64_t EdgeFS::write(const std::string& fileName, const char* buff, uint32_t le
 
     if (0 != needChunkNum)
     {
-        if (!m_pBitMap->generateIdleChunkids(idleChunkids, needChunkNum) || idleChunkids.empty())
+        if (!m_pBitMap->generateIdleChunkids(pCurrFileTailMtInfo, calcChunkid(pCurrFileTailMtInfo),
+            idleChunkids, needChunkNum)
+            || idleChunkids.empty())
         {
-            lwarn("no idle chunk");
+            lwarn("taskid %u no idle chunk", m_currTaskid);
             return -1;
         }
     }
-    ldebug("idleChunkSize %zu", idleChunkids.size());
+    linfo("taskid %u idleChunkSize %zu", m_currTaskid, idleChunkids.size());
 
     uint64_t remainLen = len;
     uint64_t offset = 0;
     uint32_t chunkid = 0;
-    uint64_t realWriteLen = 0;
+    uint32_t realWriteLen = 0;
     uint32_t chunkSize = m_pFSHead->m_chunkSize;
 
     do
@@ -406,11 +410,12 @@ int64_t EdgeFS::write(const std::string& fileName, const char* buff, uint32_t le
                 offset += chunkSize - pCurrFileTailMtInfo->m_idleLen;
             }
 
-            linfo("first write, firstWriteLen %u chunkid %u offset %" PRIu64, firstWriteLen, chunkid, offset);
+            linfo("taskid %u first write, firstWriteLen %u chunkid %u offset %" PRIu64,
+                m_currTaskid, firstWriteLen, chunkid, offset);
 
             if (!m_pDataMgr->write(buff+realWriteLen, firstWriteLen, offset))
             {
-                lerror("[err] write failed, writeLen %u offset %" PRIu64, len, offset);
+                lerror("taskid %u write failed, writeLen %u offset %" PRIu64, m_currTaskid, len, offset);
                 break;
             }
             realWriteLen += firstWriteLen;
@@ -437,7 +442,8 @@ int64_t EdgeFS::write(const std::string& fileName, const char* buff, uint32_t le
                 pChunkTailMtInfo->m_nextChunkid = idleChunkids.empty() ? kInvalidChunkid : idleChunkids[0];
             }
 
-            linfo("chunkid %u offset %" PRIu64 " tailMetaInfo %s", chunkid, offset, pCurrFileTailMtInfo->print().c_str());
+            linfo("taskid %u chunkid %u offset %" PRIu64 " tailMetaInfo %s", m_currTaskid, chunkid,
+                offset, pCurrFileTailMtInfo->print().c_str());
         }
         else
         {
@@ -454,14 +460,16 @@ int64_t EdgeFS::write(const std::string& fileName, const char* buff, uint32_t le
             {
                 uint32_t writeLen = remainLen >=  chunkSize ? chunkSize : remainLen;
                 chunkid = idleChunkids[i];
-                offset = chunkid * chunkSize;
+                offset = (uint64_t)chunkid * (uint64_t)chunkSize;
                 MetaInfo* pCurrMtInfo = calcMetaInfoPtr(chunkid);
 
-                linfo("chunkid %u offset %" PRIu64 " writeLen %u", chunkid, offset, writeLen);
+                linfo("taskid %u chunkid %u offset %" PRIu64 " writeLen %u buffOffset %u",
+                    m_currTaskid, chunkid, offset, writeLen, realWriteLen);
 
                 if (!m_pDataMgr->write(buff+realWriteLen, writeLen, offset))
                 {
-                    lerror("write failed, writeLen %u offset %" PRIu64, len, offset);
+                    lerror("taskid %u write failed, writeLen %u offset %" PRIu64, m_currTaskid,
+                        len, offset);
                     break;
                 }
                 remainLen -= writeLen;
@@ -484,7 +492,7 @@ int64_t EdgeFS::write(const std::string& fileName, const char* buff, uint32_t le
                     pCurrMtInfo->m_nextChunkid = idleChunkids[i+1];
                     pCurrMtInfo->m_idleLen = 0;
                 }
-                linfo("metaInfo %s", pCurrMtInfo->print().c_str());
+                linfo("taskid %u metaInfo %s", m_currTaskid, pCurrMtInfo->print().c_str());
             }
         }
     } while (0);
@@ -500,7 +508,10 @@ int64_t EdgeFS::read(const std::string& fileName, char* buff, uint32_t len, uint
     {
         return -1;
     }
-    lnotice("fileName %s len %u offset %" PRIu64, fileName.c_str(), len, offset);
+    m_currTaskid = generateTaskid();
+
+    lnotice("taskid %u fileName %s len %u offset %" PRIu64, m_currTaskid, fileName.c_str(), len,
+        offset);
 
     char sha1Val[SHA_DIGEST_LENGTH] = { '\0' };
     ShaHelper::calcShaToHex(fileName, sha1Val);
@@ -515,32 +526,33 @@ int64_t EdgeFS::read(const std::string& fileName, char* buff, uint32_t len, uint
 
     if (writeChunkids.empty())
     {
-        lwarn("not found file, fileName %s", fileName.c_str());
+        lwarn("taskid %u not found file, fileName %s", m_currTaskid, fileName.c_str());
         return -1;
     }
     if (offset > writeTotalLen)
     {
-        lwarn("offset too large, offset %" PRIu64 " writeTotalLen %" PRIu64, offset, writeTotalLen);
+        lwarn("taskid %u offset too large, offset %" PRIu64 " writeTotalLen %" PRIu64, m_currTaskid,
+            offset, writeTotalLen);
         return -1;
     }
 
-    linfo("writeChunkNum %zu writeTotalLen %" PRIu64 " lastChunkWriteLen %u", writeChunkids.size(), writeTotalLen,
-        lastChunkWriteLen);
-    linfo("write chunkids : ");
+    linfo("taskid %u writeChunkNum %zu writeTotalLen %" PRIu64 " lastChunkWriteLen %u",
+        m_currTaskid, writeChunkids.size(), writeTotalLen, lastChunkWriteLen);
+    linfo("taskid %u write chunkids : ", m_currTaskid);
     for (uint32_t i = 0; i < writeChunkids.size(); i++)
     {
-        ldebug("%d ", writeChunkids[i]);
+        ldebug("taskid %u chunkid %d ", m_currTaskid, writeChunkids[i]);
     }
 
     // calcReadVariable和generateReadChunkids合并可以优化性能和内存占用
     // 当文件比较大时，writeChunkids可能会内存消耗
-    std::map<uint64_t, uint32_t> readInfo;     // offset -> len
+    std::deque<std::pair<uint64_t, uint32_t>> readInfo;     // offset -> len
     calcReadVariable(writeChunkids, lastChunkWriteLen, len, offset, readInfo);
 
     for (auto it = readInfo.begin(); it != readInfo.end(); ++it)
     {
-        linfo("read chunkId %u offset %" PRIu64 " len %u", (uint32_t)(it->first/m_pFSHead->m_chunkSize), it->first,
-            it->second);
+        linfo("taskid %u read chunkId %u offset %" PRIu64 " len %u", m_currTaskid,
+            (uint32_t)(it->first/m_pFSHead->m_chunkSize), it->first, it->second);
     }
 
     uint32_t realReadLen = 0;
@@ -548,8 +560,8 @@ int64_t EdgeFS::read(const std::string& fileName, char* buff, uint32_t len, uint
     {
         if (!m_pDataMgr->read(buff+realReadLen, it->second, it->first))
         {
-            lerror("read failed, chunkid %u offset %" PRIu64 " readLen %u", (uint32_t)(it->first/m_pFSHead->m_chunkSize),
-                it->first, it->second);
+            lerror("taskid %u read failed, chunkid %u offset %" PRIu64 " readLen %u", m_currTaskid,
+                (uint32_t)(it->first/m_pFSHead->m_chunkSize), it->first, it->second);
             break;
         }
         realReadLen += it->second;
@@ -589,7 +601,7 @@ void EdgeFS::generateReadChunkids(const MetaInfo* pHeadMtInfo, const char* sha1V
 }
 
 void EdgeFS::calcReadVariable(const std::deque<uint32_t>& writeChunkids, uint32_t lastChunkWriteLen,
-    uint32_t readLen, uint64_t offset, std::map<uint64_t, uint32_t>& readInfo)
+    uint32_t readLen, uint64_t offset, std::deque<std::pair<uint64_t, uint32_t>>& readInfo)
 {
     const uint32_t chunkSize = m_pFSHead->m_chunkSize;
     const uint32_t firstReadIdx = DIV_ROUND_DOWN(offset, chunkSize);
@@ -600,13 +612,17 @@ void EdgeFS::calcReadVariable(const std::deque<uint32_t>& writeChunkids, uint32_
     {
         // 已经读取到最后一个chunk了
         firstChunkReadLen = std::min(lastChunkWriteLen - firstChunkSkipLen, readLen);
-        readInfo[calcOffset(writeChunkids[firstReadIdx]) + firstChunkSkipLen] = firstChunkReadLen;
+        readInfo.push_back(
+            std::pair<uint64_t, uint32_t>(calcOffset(writeChunkids[firstReadIdx]) + firstChunkSkipLen,
+            firstChunkReadLen));
         return ;
     }
     else
     {
         firstChunkReadLen = std::min(chunkSize - firstChunkSkipLen, readLen);
-        readInfo[calcOffset(writeChunkids[firstReadIdx]) + firstChunkSkipLen] = firstChunkReadLen;
+        readInfo.push_back(
+            std::pair<uint64_t, uint32_t>(calcOffset(writeChunkids[firstReadIdx]) + firstChunkSkipLen,
+            firstChunkReadLen));
     }
 
     uint32_t remainLen = readLen - firstChunkReadLen;
@@ -630,14 +646,20 @@ void EdgeFS::calcReadVariable(const std::deque<uint32_t>& writeChunkids, uint32_
         }
         
         uint32_t chunkReadLen = std::min(chunkSize, remainLen);
-        readInfo[calcOffset(chunkid)] = chunkReadLen;
+        readInfo.push_back(std::pair<uint64_t, uint32_t>(calcOffset(chunkid), chunkReadLen));
         remainLen -= chunkReadLen;
     }
 }
 
+uint32_t EdgeFS::generateTaskid()
+{
+    return m_nextTaskid++;
+}
+
 void EdgeFS::printAllMetaInfo()
 {
-    linfo("start");
+    uint32_t cnt = 0;
+    linfo("taskid %u start", m_currTaskid);
     for (uint32_t chunkid = 0; chunkid < m_pFSHead->m_chunkNum; chunkid++)
     {
         MetaInfo* pMtInfo = calcMetaInfoPtr(chunkid);
@@ -645,9 +667,10 @@ void EdgeFS::printAllMetaInfo()
         {
             continue;
         }
-        linfo("chunkid %u writeLen %u idleLen %u nextChunkId %d", chunkid,
+        cnt += 1;
+        linfo("taskid %u chunkid %u writeLen %u idleLen %u nextChunkId %d", m_currTaskid, chunkid,
             m_pFSHead->m_chunkSize - pMtInfo->m_idleLen, pMtInfo->m_idleLen,
             pMtInfo->m_nextChunkid);
     }
-    linfo("end");
+    linfo("taskid %u end, cnt %u", m_currTaskid, cnt);
 }

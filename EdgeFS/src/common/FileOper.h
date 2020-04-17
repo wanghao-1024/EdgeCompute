@@ -6,20 +6,22 @@ class FileOper
 public:
     FileOper();
     FileOper(const std::string &path);
-    ~FileOper();
+    virtual ~FileOper();
 
 public:
     void setPath(const std::string &path);
 
-    bool write(const char* buff, uint32_t len, uint64_t offset);
-    bool write(const char* buff, uint32_t len);
+    virtual bool write(const char* buff, uint32_t len, uint64_t offset);
+    virtual bool write(const char* buff, uint32_t len);
 
-    bool read(char* buff, uint32_t len, uint64_t offset);
-    bool read(char* buff, uint32_t len);
+    virtual bool read(char* buff, uint32_t len, uint64_t offset);
+    virtual bool read(char* buff, uint32_t len);
 
-    void close();
+    virtual void close();
     
-    bool open(int oflag = O_RDWR | O_CREAT);
+    virtual bool open(int oflag = O_RDWR | O_CREAT);
+
+    virtual void unlink();
 
 public:
     const std::string& getPath()    { return m_path; }

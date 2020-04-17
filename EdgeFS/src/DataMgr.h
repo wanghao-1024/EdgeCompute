@@ -3,25 +3,14 @@
 #include "./common/FileOper.h"
 #include <string>
 
-class DataMgr
+class DataMgr : public FileOper
 {
 public:
     DataMgr();
     ~DataMgr();
 
 public:
-    void initDataMgr(const std::string& rootDir);
+    bool initDataMgr(const std::string& rootDir, uint64_t fileSize);
 
-    bool write(const char* buff, uint32_t len, uint64_t offset);
-
-    bool read(char* buff, uint32_t len, uint64_t offset);
-    
-public:
-    int getfd()
-    {
-        return m_pFileOper->getfd();
-    }
-    
-private:
-    FileOper*       m_pFileOper;
+    virtual bool write(const char* buff, uint32_t len, uint64_t offset);
 };

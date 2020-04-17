@@ -3,21 +3,12 @@
 #include "./common/FileOper.h"
 #include <string>
 
-class IndexMgr
+class IndexMgr : public FileOper
 {
 public:
     IndexMgr();
     ~IndexMgr();
 
 public:
-    void initIndexMgr(const std::string& rootDir, bool& isExistIdxFile);
-    
-public:
-    int getfd()
-    {
-        return m_pFileOper->getfd();
-    }
-
-private:
-    FileOper*       m_pFileOper;
+    bool initIndexMgr(const std::string& rootDir, uint64_t fileSize, bool& isExistIdxFile);
 };

@@ -13,6 +13,7 @@
 #include <sys/syscall.h>
 #include <sys/time.h>
 #include <sys/mman.h>
+#include <sys/types.h>
 
 // C++ head file
 #include <thread>

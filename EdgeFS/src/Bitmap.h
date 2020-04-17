@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/SystemHead.h"
+#include "EdgeFSProtocol.h"
 
 class Bitmap
 {
@@ -11,13 +12,20 @@ public:
 public:
     void initBitmap(void* ptr, uint32_t bitmapSize, uint32_t idxNum);
 
-    bool generateIdleChunkids(std::vector<uint32_t>& idleChunkids, uint32_t needChunkNum);
+    bool generateIdleChunkids(const MetaInfo* pTailMtInfo, uint32_t tailChunkid,
+        std::vector<uint32_t>& idleChunkids, uint32_t needChunkNum);
 
     bool isHave(uint32_t idx);
 
     bool insert(uint32_t idx);
 
-    bool insert(const std::vector<uint32_t>& idxs);
+    void insert(const std::vector<uint32_t>& idxs);
+
+private:
+    bool generateIdleChunkidsForFast(std::vector<uint32_t>& idleChunkids,
+        uint32_t needChunkNum, uint32_t excludeChunkid);
+    bool generateIdleChunkidsForSteady(std::vector<uint32_t>& idleChunkids,
+        uint32_t needChunkNum, uint32_t excludeChunkid);
 
 public:
     void* getPtr()
@@ -28,5 +36,6 @@ public:
 public:
     uint8_t*    m_ptr;
     uint32_t    m_bitmapSize;
-    uint32_t    m_idxNum;
+    uint32_t    m_totalChunkNum;
+    uint32_t    m_writeChunkNum;
 };

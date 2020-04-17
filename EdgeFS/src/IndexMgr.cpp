@@ -6,17 +6,34 @@
 
 IndexMgr::IndexMgr()
 {
-    m_pFileOper = new FileOper();
 }
 IndexMgr::~IndexMgr()
 {
-    SAFE_DELETE(m_pFileOper);
 }
 
-void IndexMgr::initIndexMgr(const std::string& rootDir, bool& isExistIdxFile)
+bool IndexMgr::initIndexMgr(const std::string& rootDir, uint64_t fileSize, bool& isExistIdxFile)
 {
     std::string filePath = rootDir + "/" + kIndexFileName;
-    m_pFileOper->setPath(filePath);
-    isExistIdxFile = 0 == access(m_pFileOper->getPath().c_str(), F_OK) ? true : false;
-    m_pFileOper->open();
+    isExistIdxFile = 0 == access(filePath.c_str(), F_OK) ? true : false;
+
+    FileOper::setPath(filePath);
+    if (!FileOper::open())
+    {
+        lerror("initIndexMgr failed, open index file failed, filepath %s isExist %u", filePath.c_str(),
+            isExistIdxFile);
+        return false;
+    }
+    if (isExistIdxFile)
+    {
+        return true;
+    }
+    
+    int fd = FileOper::getfd();
+    if (ftruncate(fd, fileSize))
+    {
+        lfatal("initIndexMgr failed, ftruncate index file failed, fileSize %" PRIu64 " err %s",
+            fileSize, strerror(errno));
+        return false;
+    }
+    return true;
 }
