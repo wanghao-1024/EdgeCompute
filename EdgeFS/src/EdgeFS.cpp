@@ -118,8 +118,8 @@ bool EdgeFS::initFSCheckParam(const SystemInfo& info)
     return true;
 }
 
-bool EdgeFS::initFSCalcVariable(const SystemInfo& info, uint32_t& chunkNum, uint32_t& chunkSize, uint64_t& diskSize,
-    uint32_t& bitmapSize, uint64_t& mmapSize)
+bool EdgeFS::initFSCalcVariable(const SystemInfo& info, uint32_t& chunkNum, uint32_t& chunkSize,
+    uint64_t& diskSize, uint32_t& bitmapSize, uint64_t& mmapSize)
 {
     chunkNum = DIV_ROUND_DOWN(info.m_edgeFSUsableMemory - sizeof(EdgeFSHead), sizeof(MetaInfo));
     chunkSize = DIV_ROUND_DOWN(info.m_diskCapacity, chunkNum);
@@ -138,41 +138,46 @@ bool EdgeFS::initFSCalcVariable(const SystemInfo& info, uint32_t& chunkNum, uint
         diskSize > info.m_diskCapacity ||
         mmapSize > info.m_edgeFSUsableMemory)
     {
-        lfatal("initFS failed, calc variable failed, chunkNum %u chunkSize %u bitmapSize %u diskSize %" PRIu64
-            " mmapSize %" PRIu64, chunkNum, chunkSize, bitmapSize, diskSize, mmapSize);
+        lfatal("initFS failed, calc variable failed, chunkNum %u chunkSize %u bitmapSize %u"
+            " diskSize %" PRIu64 " mmapSize %" PRIu64,
+            chunkNum, chunkSize, bitmapSize, diskSize, mmapSize);
         lfatal("initFS failed, calc variable failed, diskSize too large: %d diskSize %" PRIu64
-            " info.m_diskCapacity %" PRIu64, diskSize >= info.m_diskCapacity, diskSize, info.m_diskCapacity);
+            " info.m_diskCapacity %" PRIu64,
+            diskSize >= info.m_diskCapacity, diskSize, info.m_diskCapacity);
         lfatal("initFS failed, calc variable failed, mmapSize too large: %d mmapSize %" PRIu64
-            " info.m_edgeFSUsableMemory %" PRIu64, mmapSize >= info.m_edgeFSUsableMemory, mmapSize,
-            info.m_edgeFSUsableMemory);
+            " info.m_edgeFSUsableMemory %" PRIu64,
+            mmapSize >= info.m_edgeFSUsableMemory, mmapSize, info.m_edgeFSUsableMemory);
         return false;
     }
 
-    linfo("chunkNum %d chunkSize %u bitmapSize %u mmapSize %" PRIu64 " diskSize %" PRIu64, chunkNum, chunkSize,
-        bitmapSize, mmapSize, diskSize);
+    linfo("chunkNum %d chunkSize %u bitmapSize %u mmapSize %" PRIu64 " diskSize %" PRIu64,
+        chunkNum, chunkSize, bitmapSize, mmapSize, diskSize);
     linfo("EdgeFSHead size %zu MetaInfo size %zu", sizeof(EdgeFSHead), sizeof(MetaInfo));
 
     return true;
 }
 
-bool EdgeFS::initFSCalcPointerAddr(bool isExistsIdxFile, uint32_t chunkNum, uint32_t chunkSize, uint64_t diskSize,
-    uint32_t bitmapSize, uint64_t mmapSize)
+bool EdgeFS::initFSCalcPointerAddr(bool isExistsIdxFile, uint32_t chunkNum, uint32_t chunkSize,
+    uint64_t diskSize, uint32_t bitmapSize, uint64_t mmapSize)
 {
     if (isExistsIdxFile)
     {
-        return initFSCalcPointerAddrForReloadIdxFile(chunkNum, chunkSize, diskSize, bitmapSize, mmapSize);
+        return initFSCalcPointerAddrForReloadIdxFile(chunkNum, chunkSize, diskSize, bitmapSize,
+            mmapSize);
     }
-    return initFSCalcPointerAddrForCreateIdxFile(chunkNum, chunkSize, diskSize, bitmapSize, mmapSize);
+    return initFSCalcPointerAddrForCreateIdxFile(chunkNum, chunkSize, diskSize, bitmapSize,
+        mmapSize);
 }
 
-bool EdgeFS::initFSCalcPointerAddrForCreateIdxFile(uint32_t chunkNum, uint32_t chunkSize, uint64_t diskSize,
-    uint32_t bitmapSize, uint64_t mmapSize)
+bool EdgeFS::initFSCalcPointerAddrForCreateIdxFile(uint32_t chunkNum, uint32_t chunkSize,
+    uint64_t diskSize, uint32_t bitmapSize, uint64_t mmapSize)
 {
     int fd = m_pIndexMgr->getfd();
     char *ptr = (char *)mmap(0, mmapSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (MAP_FAILED == ptr)
     {
-        lfatal("initFS failed, mmap failed, mmapSize %" PRIu64 " fd %d err %s", mmapSize, fd, strerror(errno));
+        lfatal("initFS failed, mmap failed, mmapSize %" PRIu64 " fd %d err %s", mmapSize, fd,
+            strerror(errno));
         return false;
     }
     memset(ptr, 0, mmapSize);
@@ -182,7 +187,8 @@ bool EdgeFS::initFSCalcPointerAddrForCreateIdxFile(uint32_t chunkNum, uint32_t c
     m_pBitMap->initBitmap((char*)m_pFSHead + sizeof(EdgeFSHead), bitmapSize, chunkNum);
     m_pMetaPool = (MetaInfo*)((char*)m_pBitMap->getPtr() + bitmapSize);
 
-    linfo("start %p fsHead %p bitmap %p metapool %p", ptr, m_pFSHead, m_pBitMap->getPtr(), m_pMetaPool);
+    linfo("start %p fsHead %p bitmap %p metapool %p", ptr, m_pFSHead, m_pBitMap->getPtr(),
+        m_pMetaPool);
     
     // 赋值FS头部信息
     memcpy(m_pFSHead->m_magic, kEdgeFSMagic.c_str(), kEdgeFSMagic.size());
@@ -192,16 +198,16 @@ bool EdgeFS::initFSCalcPointerAddrForCreateIdxFile(uint32_t chunkNum, uint32_t c
     m_pFSHead->m_chunkSize = chunkSize;
     m_pFSHead->m_bitmapSize = bitmapSize;
 
-    linfo("index file EdgeFSHead, magic %s memory %" PRIu64 " diskSize %" PRIu64 " chunkNum %u chunkSize %u"
-        " bitmapSize %u",
+    linfo("index file EdgeFSHead, magic %s memory %" PRIu64 " diskSize %" PRIu64 " chunkNum %u"
+        " chunkSize %u bitmapSize %u",
         m_pFSHead->m_magic, m_pFSHead->m_usableMemory, m_pFSHead->m_coverableDiskSize,
         m_pFSHead->m_chunkNum, m_pFSHead->m_chunkSize, m_pFSHead->m_bitmapSize);
 
     return true;
 }
 
-bool EdgeFS::initFSCalcPointerAddrForReloadIdxFile(uint32_t chunkNum, uint32_t chunkSize, uint64_t diskSize,
-    uint32_t bitmapSize, uint64_t mmapSize)
+bool EdgeFS::initFSCalcPointerAddrForReloadIdxFile(uint32_t chunkNum, uint32_t chunkSize,
+    uint64_t diskSize, uint32_t bitmapSize, uint64_t mmapSize)
 {
     int fd = m_pIndexMgr->getfd();
     if (-1 == fd)
@@ -212,7 +218,8 @@ bool EdgeFS::initFSCalcPointerAddrForReloadIdxFile(uint32_t chunkNum, uint32_t c
     char *ptr = (char *)mmap(0, mmapSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (MAP_FAILED == ptr)
     {
-        lfatal("initFS failed, mmap failed, mmapSize %" PRIu64 " fd %d err %s", mmapSize, fd, strerror(errno));
+        lfatal("initFS failed, mmap failed, mmapSize %" PRIu64 " fd %d err %s", mmapSize, fd,
+            strerror(errno));
         return false;
     }
 
@@ -220,7 +227,8 @@ bool EdgeFS::initFSCalcPointerAddrForReloadIdxFile(uint32_t chunkNum, uint32_t c
     m_pBitMap->initBitmap((char*)m_pFSHead + sizeof(EdgeFSHead), bitmapSize, chunkNum);
     m_pMetaPool = (MetaInfo*)((char*)m_pBitMap->getPtr() + bitmapSize);
 
-    linfo("start %p fsHead %p bitmap %p metapool %p", ptr, m_pFSHead, m_pBitMap->getPtr(), m_pMetaPool);
+    linfo("start %p fsHead %p bitmap %p metapool %p", ptr, m_pFSHead, m_pBitMap->getPtr(),
+        m_pMetaPool);
 
     // 对index文件中的FS头部信息做校验
     if (0 != memcmp(m_pFSHead->m_magic, kEdgeFSMagic.c_str(), kEdgeFSMagic.size()) ||
@@ -240,8 +248,8 @@ bool EdgeFS::initFSCalcPointerAddrForReloadIdxFile(uint32_t chunkNum, uint32_t c
         return false;
     }
 
-    linfo("index file EdgeFSHead, magic %s memory %" PRIu64 " diskSize %" PRIu64 "chunkNum %u chunkSize %u"
-        " bitmapSize %u",
+    linfo("index file EdgeFSHead, magic %s memory %" PRIu64 " diskSize %" PRIu64 "chunkNum %u"
+        " chunkSize %u bitmapSize %u",
         m_pFSHead->m_magic, m_pFSHead->m_usableMemory, m_pFSHead->m_coverableDiskSize,
         m_pFSHead->m_chunkNum, m_pFSHead->m_chunkSize, m_pFSHead->m_bitmapSize);
 
@@ -278,7 +286,8 @@ void EdgeFS::calcWriteVariable(const MetaInfo* pTailMtInfo, uint32_t writeLen, u
     lastChunkWriteLen = (0 == remainLen % m_pFSHead->m_chunkSize) ?
         m_pFSHead->m_chunkSize : remainLen % m_pFSHead->m_chunkSize;
         
-    linfo("taskid %u pTailMtInfo %p writeLen %u firstWriteLen %u needChunkNum %u lastChunkWriteLen %u",
+    linfo("taskid %u pTailMtInfo %p writeLen %u firstWriteLen %u needChunkNum %u"
+        " lastChunkWriteLen %u",
         m_currTaskid, pTailMtInfo, writeLen, firstWriteLen, needChunkNum, lastChunkWriteLen);
 }
 
@@ -415,7 +424,8 @@ int64_t EdgeFS::write(const std::string& fileName, const char* buff, uint32_t le
 
             if (!m_pDataMgr->write(buff+realWriteLen, firstWriteLen, offset))
             {
-                lerror("taskid %u write failed, writeLen %u offset %" PRIu64, m_currTaskid, len, offset);
+                lerror("taskid %u write failed, writeLen %u offset %" PRIu64, m_currTaskid, len,
+                    offset);
                 break;
             }
             realWriteLen += firstWriteLen;
@@ -439,7 +449,8 @@ int64_t EdgeFS::write(const std::string& fileName, const char* buff, uint32_t le
                 // 当前chunk已经写满了，则赋值最后一个chunk的nextChunkid
                 // 请注意这里不是赋值pCurrFileTailMtInfo
                 // 请详细看ReadMe.md的元数据区的图
-                pChunkTailMtInfo->m_nextChunkid = idleChunkids.empty() ? kInvalidChunkid : idleChunkids[0];
+                pChunkTailMtInfo->m_nextChunkid =
+                    idleChunkids.empty() ? kInvalidChunkid : idleChunkids[0];
             }
 
             linfo("taskid %u chunkid %u offset %" PRIu64 " tailMetaInfo %s", m_currTaskid, chunkid,
@@ -478,7 +489,8 @@ int64_t EdgeFS::write(const std::string& fileName, const char* buff, uint32_t le
                 // 写入成功更新bitmap、metainfo
                 m_pBitMap->insert(chunkid);
                 pCurrMtInfo->m_isUsed = true;
-                memcpy(pCurrMtInfo->m_metaData.m_sha1, sha1Val, sizeof(pCurrMtInfo->m_metaData.m_sha1));
+                memcpy(pCurrMtInfo->m_metaData.m_sha1, sha1Val,
+                    sizeof(pCurrMtInfo->m_metaData.m_sha1));
                 pCurrMtInfo->m_idleLen = chunkSize - firstWriteLen;
 
                 if (i + 1 == needChunkNum)
@@ -613,16 +625,18 @@ void EdgeFS::calcReadVariable(const std::deque<uint32_t>& writeChunkids, uint32_
         // 已经读取到最后一个chunk了
         firstChunkReadLen = std::min(lastChunkWriteLen - firstChunkSkipLen, readLen);
         readInfo.push_back(
-            std::pair<uint64_t, uint32_t>(calcOffset(writeChunkids[firstReadIdx]) + firstChunkSkipLen,
-            firstChunkReadLen));
+            std::pair<uint64_t, uint32_t>(
+                calcOffset(writeChunkids[firstReadIdx]) + firstChunkSkipLen,
+                firstChunkReadLen));
         return ;
     }
     else
     {
         firstChunkReadLen = std::min(chunkSize - firstChunkSkipLen, readLen);
         readInfo.push_back(
-            std::pair<uint64_t, uint32_t>(calcOffset(writeChunkids[firstReadIdx]) + firstChunkSkipLen,
-            firstChunkReadLen));
+            std::pair<uint64_t, uint32_t>(
+                calcOffset(writeChunkids[firstReadIdx]) + firstChunkSkipLen,
+                firstChunkReadLen));
     }
 
     uint32_t remainLen = readLen - firstChunkReadLen;

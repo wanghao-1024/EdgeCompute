@@ -68,8 +68,7 @@ bool Bitmap::generateIdleChunkidsForFast(std::vector<uint32_t>& idleChunkids,
 
         uint32_t chunkid = dist(e) % m_totalChunkNum;
 
-        if (isHave(chunkid) ||
-            chunkid == excludeChunkid)
+        if (isHave(chunkid) || chunkid == excludeChunkid)
         {
             continue;
         }
@@ -82,8 +81,7 @@ bool Bitmap::generateIdleChunkidsForFast(std::vector<uint32_t>& idleChunkids,
 
     for (size_t chunkid = 0; chunkid < m_totalChunkNum; chunkid++)
     {
-        if (isHave(chunkid) ||
-            chunkid == excludeChunkid)
+        if (isHave(chunkid) || chunkid == excludeChunkid)
         {
             continue;
         }
@@ -105,8 +103,7 @@ bool Bitmap::generateIdleChunkidsForSteady(std::vector<uint32_t>& idleChunkids,
 
     for (size_t chunkid = 0; chunkid < m_totalChunkNum; chunkid++)
     {
-        if (isHave(chunkid) ||
-            chunkid == excludeChunkid)
+        if (isHave(chunkid) || chunkid == excludeChunkid)
         {
             continue;
         }
