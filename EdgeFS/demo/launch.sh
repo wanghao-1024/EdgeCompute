@@ -1,6 +1,7 @@
 #!/bin/bash
 
 rm -rf ../data/edgefs*
+mkdir -p ../data/
 
 rm -f filename1.txt
 rm -f filename2.txt
