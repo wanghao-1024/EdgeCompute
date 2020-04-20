@@ -43,7 +43,7 @@ int main(int argc, char* argv[])
 
     static std::random_device r;
     static std::default_random_engine e(r());
-    static std::uniform_int_distribution<uint32_t> dist(0, 1024*1024*2+100);
+    static std::uniform_int_distribution<uint32_t> dist(0, 1024*1024*5+100);
     
     
     while (writeLen < fileSize)
