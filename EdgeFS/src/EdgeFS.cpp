@@ -1,5 +1,6 @@
 #include "EdgeFS.h"
 #include "EdgeFSConst.h"
+#include "EdgeFSDebugSwitch.h"
 #include "./common/common.h"
 
 EdgeFS* EdgeFS::m_pInstance = NULL;
@@ -281,6 +282,12 @@ void EdgeFS::calcWriteVariable(const MetaInfo* pTailMtInfo, uint32_t writeLen, u
                 pTailMtInfo->m_idleLen : writeLen;
         }
     }
+    else
+    {
+        // 首次写入该文件
+        firstWriteLen = 0;
+    }
+    
     uint64_t remainLen = writeLen - firstWriteLen;
     needChunkNum = DIV_ROUND_UP(remainLen, m_pFSHead->m_chunkSize);
     lastChunkWriteLen = (0 == remainLen % m_pFSHead->m_chunkSize) ?
@@ -357,6 +364,11 @@ uint64_t EdgeFS::calcOffset(uint32_t chunkid)
 
 uint32_t EdgeFS::generateHashKey(const char* sha1Val)
 {
+    if (kHashCollisions)
+    {
+        return 101;
+    
+    }
     return (*(uint32_t*)sha1Val) % m_pFSHead->m_chunkNum;
 }
 

@@ -29,7 +29,7 @@ bool Bitmap::generateIdleChunkids(const MetaInfo* pTailMtInfo, uint32_t tailChun
         return true;        
     }
 
-    if (!pTailMtInfo->m_isUsed)
+    if (NULL != pTailMtInfo && !pTailMtInfo->m_isUsed)
     {
         idleChunkids.push_back(tailChunkid);
     }
