@@ -403,9 +403,9 @@ int64_t EdgeFS::write(const std::string& fileName, const char* buff, uint32_t le
 
     if (0 != needChunkNum)
     {
-        if (!m_pBitMap->generateIdleChunkids(pCurrFileTailMtInfo, calcChunkid(pCurrFileTailMtInfo),
-            idleChunkids, needChunkNum)
-            || idleChunkids.empty())
+        if (!m_pBitMap->generateIdleChunkids(
+                pCurrFileTailMtInfo, calcChunkid(pCurrFileTailMtInfo), idleChunkids, needChunkNum) ||
+            idleChunkids.empty())
         {
             lwarn("taskid %u no idle chunk", m_currTaskid);
             return -1;
